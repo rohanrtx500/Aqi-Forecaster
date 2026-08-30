@@ -1,4 +1,4 @@
-﻿"""
+"""
 AirSense AI - Production Environmental Intelligence & Forecasting Platform.
 Includes:
 - Tab 1: 🌍 Live Forecast & City Explorer
@@ -135,7 +135,7 @@ def get_all_cities_cached_ranking(std: str):
 # =========================================================================
 top_brand, top_nav = st.columns([1.2, 2.8])
 with top_brand:
-    st.markdown("<h2 style='margin:0; padding:0; font-weight:800; color:#f8fafc;'>🌍 AirSense AI</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin:0; padding:0; font-weight:800; color:#f8fafc;'>🌍 AirSense</h2>", unsafe_allow_html=True)
     st.caption("Environmental Intelligence & Predictive Forecasting Platform across India")
 
 with top_nav:
@@ -584,7 +584,7 @@ st.divider()
 # ---------- footer ----------
 st.markdown(
     "<div style='text-align:center; opacity:0.6; font-size:13px;'>"
-    "AirSense AI — Environmental Intelligence & Multi-City Air Quality Forecasting Platform<br>"
-    "Powered by Real-Time Atmospheric Monitoring & Advanced Predictive Analytics across 30 Indian Cities.</div>",
+    "AirSense — Environmental Intelligence & Multi-City Air Quality Forecasting Platform<br>"
+    "Powered by Real-Time Atmospheric Monitoring & 24-Hour Predictive Projections across 30 Indian Cities.</div>",
     unsafe_allow_html=True,
 )

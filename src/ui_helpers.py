@@ -422,12 +422,12 @@ def render_ai_daily_briefing(city: str, current: dict, forecast_rows: list, late
         f"**{city} Air Intelligence Briefing:** Air quality currently stands at **{cur_pm} µg/m³** ({current['category']}). "
         f"Over the next 24 hours, $\\text{{PM}}_{{2.5}}$ levels are projected to peak at **{peak['pm25']} µg/m³** around **{peak['time']}**, "
         f"before relaxing toward a 24-hour minimum of **{low['pm25']} µg/m³** at **{low['time']}**. "
-        f"Atmospheric modeling detects {dispersion}. {hum_note}"
+        f"Atmospheric analysis indicates {dispersion}. {hum_note}"
     )
 
     st.markdown(
         f'<div class="ai-briefing-box">'
-        f'<div class="header">🤖 AI Atmospheric & Environmental Intelligence Briefing</div>'
+        f'<div class="header">📋 Atmospheric & Environmental Daily Briefing</div>'
         f'<div class="content">{briefing_text}</div>'
         f'</div>',
         unsafe_allow_html=True,
@@ -514,7 +514,7 @@ def render_pollutants_breakdown(pm25: float, standard: str = "CPCB", live_pollut
 import plotly.graph_objects as go
 
 def render_xai_feature_attribution(attributions: dict):
-    """Render Explainable AI (XAI) feature contribution breakdown."""
+    """Render feature contribution breakdown."""
     if not attributions:
         return
     
@@ -545,19 +545,19 @@ def render_xai_feature_attribution(attributions: dict):
 
 
 def render_anomaly_badge(anomaly_info: dict):
-    """Render unsupervised anomaly detection index bar."""
+    """Render atmospheric stability status bar."""
     if not anomaly_info:
         return
     score = anomaly_info.get("anomaly_score", 0.0)
-    status = anomaly_info.get("status", "Nominal")
+    status = anomaly_info.get("status", "Stable Atmospheric Conditions")
     z = anomaly_info.get("z_score", 0.0)
     color = anomaly_info.get("color", "#10b981")
 
     st.markdown(
         f'<div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid {color}; border-radius: 10px; padding: 12px 18px; margin-bottom: 16px;">'
         f'<div style="display:flex; justify-content:space-between; align-items:center;">'
-        f'<div><span style="font-weight:700; font-size:14px; color:{color};">{status}</span> &nbsp;|&nbsp; <span style="font-size:12.5px; opacity:0.8;">Atmospheric Deviation Z-Score: <b>{z}σ</b></span></div>'
-        f'<div><span style="font-size:12px; font-weight:700; background:{color}22; color:{color}; padding:3px 10px; border-radius:12px; border:1px solid {color}44;">Anomaly Confidence: {score:.0f}%</span></div>'
+        f'<div><span style="font-weight:700; font-size:14px; color:{color};">{status}</span> &nbsp;|&nbsp; <span style="font-size:12.5px; opacity:0.8;">Atmospheric Variance: <b>{z}σ</b></span></div>'
+        f'<div><span style="font-size:12px; font-weight:700; background:{color}22; color:{color}; padding:3px 10px; border-radius:12px; border:1px solid {color}44;">Stability Score: {max(0, 100-int(score))}%</span></div>'
         f'</div>'
         f'</div>',
         unsafe_allow_html=True,

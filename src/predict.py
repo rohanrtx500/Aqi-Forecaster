@@ -1,4 +1,4 @@
-﻿"""
+"""
 Phase 6: Advanced ML & Deep Learning Inference Engine for AirSense AI.
 Includes:
 1. Standard 24h LSTM Inference
@@ -214,16 +214,16 @@ def compute_atmospheric_anomaly_index(records: list[dict], current_pm: float) ->
     score = min(100.0, round(float(z_score * 28.0), 1))
 
     if score > 70.0:
-        status = "🚨 Extreme Atmospheric Anomaly / Pollution Surge"
-        severity = "Severe"
+        status = "🚨 Significant Air Quality Surge Detected"
+        severity = "Elevated"
         color = "#ef4444"
     elif score > 45.0:
-        status = "⚠️ Moderate Atmospheric Divergence"
+        status = "⚠️ Moderate Atmospheric Variation"
         severity = "Moderate"
         color = "#f59e0b"
     else:
-        status = "🟢 Nominal Atmospheric Baseline"
-        severity = "Low"
+        status = "🟢 Stable Atmospheric Baseline"
+        severity = "Normal"
         color = "#10b981"
 
     return {
