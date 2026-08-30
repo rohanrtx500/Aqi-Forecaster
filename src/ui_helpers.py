@@ -530,11 +530,11 @@ def render_xai_feature_attribution(attributions: dict):
             colorscale='Tealgrn',
             showscale=False,
         ),
-        hovertemplate="<b>%{y}</b><br>Model Sensitivity Contribution: <b>%{x:.1f}%</b><extra></extra>"
+        hovertemplate="<b>%{y}</b><br>Atmospheric Influence: <b>%{x:.1f}%</b><extra></extra>"
     ))
 
     fig.update_layout(
-        xaxis_title="Relative Deep Learning Model Attribution (%)",
+        xaxis_title="Relative Atmospheric Influence Factor (%)",
         height=240,
         margin=dict(t=10, b=10, l=10, r=10),
         plot_bgcolor="rgba(15, 23, 42, 0.4)",
