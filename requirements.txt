@@ -1,10 +1,9 @@
-pandas
+﻿pandas
 numpy
 requests
 python-dotenv
 scikit-learn
 xgboost
-prophet
 torch
 fastapi
 uvicorn
