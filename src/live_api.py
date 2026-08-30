@@ -1,4 +1,4 @@
-﻿"""
+"""
 Live Real-Time Atmospheric & Criteria Air Pollutant API Client.
 Fetches real-time, 0-minute lag measurements for all 6 NAAQS criteria pollutants
 and local weather conditions directly from satellite & atmospheric streams.
@@ -22,8 +22,8 @@ def fetch_live_air_quality(city: str) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "AirSenseAI/2.0"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "AirSense/1.0"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             cur = data.get("current", {})
             if not cur:
@@ -60,8 +60,8 @@ def fetch_live_weather(city: str) -> Optional[Dict[str, Any]]:
     )
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "AirSenseAI/2.0"})
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        req = urllib.request.Request(url, headers={"User-Agent": "AirSense/1.0"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             cur = data.get("current", {})
             if not cur:
