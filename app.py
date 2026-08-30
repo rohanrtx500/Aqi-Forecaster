@@ -1,7 +1,7 @@
 ﻿"""
-AirSense AI - Production Multi-Page Web Platform with Top Navbar & Parallel Accelerated Ranking.
+AirSense AI - Production Multi-Page Web Platform with Deep Learning & XAI Intelligence.
 Includes:
-- Tab 1: 🌍 Live Forecast & Explorer
+- Tab 1: 🌍 Live Forecast & Deep Learning Explorer
 - Tab 2: 📊 City Analytics & Compare
 - Tab 3: 🏥 Health & Standards Guide
 """
@@ -14,10 +14,18 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from src.config import CITIES, processed_csv_path, model_available, data_available
+from src.config import CITIES, processed_csv_path, city_models_dir, model_available, data_available
 from src.aqi_utils import pm25_to_aqi_labeled, pm25_to_cpcb_aqi, pm25_to_us_aqi
-from src.api_client import get_current, post_predict, ApiError
+from src.api_client import get_current, ApiError
 from src.live_api import fetch_live_air_quality, fetch_live_weather
+from src.predict import (
+    load_lstm_24h_artifacts,
+    predict_next_24h,
+    predict_next_24h_mc_dropout,
+    predict_what_if_scenario,
+    compute_xai_feature_attributions,
+    compute_atmospheric_anomaly_index,
+)
 from src.ui_helpers import (
     inject_css,
     metric_card,
@@ -28,12 +36,24 @@ from src.ui_helpers import (
     render_health_advisories,
     render_ai_daily_briefing,
     render_pollutants_breakdown,
+    render_xai_feature_attribution,
+    render_anomaly_badge,
 )
 
 st.set_page_config(page_title="AirSense AI - Environmental Intelligence", layout="wide", initial_sidebar_state="collapsed")
 inject_css()
 
-# ---------- local non-model data helpers ----------
+# Cache model artifacts in memory
+_artifacts_memory = {}
+
+def get_loaded_artifacts(city: str):
+    if city not in _artifacts_memory:
+        if not model_available(city):
+            return None
+        _artifacts_memory[city] = load_lstm_24h_artifacts(city_models_dir(city))
+    return _artifacts_memory[city]
+
+
 def load_window_and_latest(city: str):
     path = processed_csv_path(city)
     df = pd.read_csv(path)
@@ -42,38 +62,41 @@ def load_window_and_latest(city: str):
     last_window = df.tail(48)
     feature_cols = [c for c in df.columns if c not in ("timestamp", "pm25")]
     records = last_window[feature_cols].to_dict(orient="records")
-    return records, last_window["timestamp"].iloc[-1], df.iloc[-1]
+    return records, last_window["timestamp"].iloc[-1], df.iloc[-1], last_window.to_dict(orient="records")
 
 
-def get_forecast_custom(city: str, std: str):
+def get_probabilistic_forecast(city: str, std: str = "CPCB"):
+    """Runs Monte Carlo Dropout Deep Learning Inference across 30 stochastic passes."""
     if not model_available(city) or not data_available(city):
-        return None
+        return None, None, None, None
     try:
-        records, last_ts, _ = load_window_and_latest(city)
+        records, last_ts, latest_row, full_records = load_window_and_latest(city)
+        artifacts = get_loaded_artifacts(city)
     except Exception:
-        return None
-    if len(records) < 48:
-        return None
-    try:
-        result = post_predict(city, records)
-    except ApiError:
-        return None
-    times = pd.date_range(start=last_ts + pd.Timedelta(hours=1), periods=len(result["pm25_forecast"]), freq="h")
+        return None, None, None, None
+
+    if len(records) < 48 or artifacts is None:
+        return None, None, None, None
+
+    # Monte Carlo Dropout Inference (P10, P50, P90)
+    mc_res = predict_next_24h_mc_dropout(records, artifacts, n_samples=30)
+    times = pd.date_range(start=last_ts + pd.Timedelta(hours=1), periods=24, freq="h")
+
     rows = []
-    for t, v in zip(times, result["pm25_forecast"]):
-        aqi, category, _ = pm25_to_aqi_labeled(v, standard=std)
-        delta = max(3.0, v * 0.12)
-        v_low = round(max(0.0, v - delta), 1)
-        v_high = round(v + delta, 1)
+    for t, p50_val, p10_val, p90_val in zip(times, mc_res["p50"], mc_res["p10"], mc_res["p90"]):
+        aqi, category, _ = pm25_to_aqi_labeled(p50_val, standard=std)
         rows.append({
             "time": t.strftime("%H:%M"),
-            "pm25": round(v, 1),
-            "pm25_lower": v_low,
-            "pm25_upper": v_high,
+            "pm25": p50_val,
+            "pm25_lower": p10_val,
+            "pm25_upper": p90_val,
             "aqi": aqi,
             "category": category,
         })
-    return rows
+
+    # Explainable AI Feature Attribution & Anomaly Index
+    xai_attributions = compute_xai_feature_attributions(records, artifacts)
+    return rows, xai_attributions, records, artifacts
 
 
 # =========================================================================
@@ -81,7 +104,6 @@ def get_forecast_custom(city: str, std: str):
 # =========================================================================
 @st.cache_data(ttl=180, show_spinner=False)
 def get_all_cities_cached_ranking(std: str):
-    """Fetches real-time metrics for all 30 Indian cities in parallel."""
     def _fetch_single_city(c_name):
         try:
             live = fetch_live_air_quality(c_name)
@@ -114,12 +136,12 @@ def get_all_cities_cached_ranking(std: str):
 top_brand, top_nav = st.columns([1.2, 2.8])
 with top_brand:
     st.markdown("<h2 style='margin:0; padding:0; font-weight:800; color:#f8fafc;'>🌍 AirSense AI</h2>", unsafe_allow_html=True)
-    st.caption("Environmental Intelligence & Air Quality Forecasting across India")
+    st.caption("Deep Learning Environmental Intelligence & Predictive Forecasting Platform")
 
 with top_nav:
     active_tab = st.radio(
         "Navigation",
-        ["🌍 Live Forecast & Explorer", "📊 City Analytics & Compare", "🏥 Health & Standards"],
+        ["🌍 Live Forecast & Deep Learning Explorer", "📊 City Analytics & Compare", "🏥 Health & Standards"],
         horizontal=True,
         label_visibility="collapsed",
     )
@@ -128,9 +150,9 @@ st.divider()
 
 
 # =========================================================================
-# 📍 TAB 1: 🌍 LIVE FORECAST & CITY EXPLORER
+# 📍 TAB 1: 🌍 LIVE FORECAST & DEEP LEARNING EXPLORER
 # =========================================================================
-if active_tab == "🌍 Live Forecast & Explorer":
+if active_tab == "🌍 Live Forecast & Deep Learning Explorer":
     header_mid, header_right = st.columns([1.3, 2.7])
     with header_mid:
         standard_choice = st.radio(
@@ -173,7 +195,7 @@ if active_tab == "🌍 Live Forecast & Explorer":
     except ApiError:
         current_raw = None
 
-    forecast_rows = None
+    forecast_rows, xai_attributions, raw_records, artifacts_obj = None, None, None, None
     if live_air and "pm25" in live_air:
         current_pm = live_air["pm25"]
         sync_status = "🟢 Live Real-Time Sync"
@@ -195,11 +217,16 @@ if active_tab == "🌍 Live Forecast & Explorer":
             "category": cur_category,
         }
 
-        with st.spinner("Generating 24-hour predictive forecast..."):
-            forecast_rows = get_forecast_custom(city, aqi_standard) if model_available(city) else None
+        with st.spinner("Running Monte Carlo PyTorch LSTM inference..."):
+            forecast_rows, xai_attributions, raw_records, artifacts_obj = get_probabilistic_forecast(city, aqi_standard)
 
         peak = max(forecast_rows, key=lambda r: r["pm25"]) if forecast_rows else None
         avg24 = round(sum(r["pm25"] for r in forecast_rows) / len(forecast_rows), 1) if forecast_rows else None
+
+        # 🚨 Unsupervised Anomaly Detection Index
+        if raw_records:
+            anomaly_info = compute_atmospheric_anomaly_index(raw_records, current_pm)
+            render_anomaly_badge(anomaly_info)
 
         st.subheader("Current Atmospheric Conditions")
         c1, c2, c3, c4, c5 = st.columns(5)
@@ -220,7 +247,7 @@ if active_tab == "🌍 Live Forecast & Explorer":
 
     if current_pm is not None:
         try:
-            _, _, latest_row = load_window_and_latest(city)
+            _, _, latest_row, _ = load_window_and_latest(city)
             if live_weather:
                 latest_row = latest_row.copy()
                 for k, v in live_weather.items():
@@ -229,20 +256,98 @@ if active_tab == "🌍 Live Forecast & Explorer":
         except Exception:
             latest_row = pd.Series(live_weather if live_weather else {})
 
+    # 24-Hour Probabilistic Forecast Chart (MC Dropout Ribbons)
     if forecast_rows:
-        st.subheader("24-Hour Air Quality Forecast & Confidence Range")
+        st.subheader("24-Hour Probabilistic Deep Learning Forecast (Monte Carlo Dropout P₁₀ – P₉₀)")
         times = [r["time"] for r in forecast_rows]
         pm25_vals = [r["pm25"] for r in forecast_rows]
         upper_vals = [r["pm25_upper"] for r in forecast_rows]
         lower_vals = [r["pm25_lower"] for r in forecast_rows]
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=times, y=upper_vals, mode="lines", line=dict(width=0), showlegend=False, name="Upper Bound", hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=times, y=lower_vals, mode="lines", line=dict(width=0), fill="tonexty", fillcolor="rgba(77, 163, 255, 0.15)", name="90% Expected Range", hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=times, y=pm25_vals, mode="lines+markers", name="Forecasted PM2.5", line=dict(color="#38bdf8", width=3), marker=dict(size=6, color="#0284c7"), hovertemplate="<b>Time: %{x}</b><br>Forecasted PM2.5: %{y:.1f} µg/m³<extra></extra>"))
+        fig.add_trace(go.Scatter(x=times, y=upper_vals, mode="lines", line=dict(width=0), showlegend=False, name="P90 Upper Bound", hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=times, y=lower_vals, mode="lines", line=dict(width=0), fill="tonexty", fillcolor="rgba(56, 189, 248, 0.18)", name="Epistemic Uncertainty (P10 - P90)", hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=times, y=pm25_vals, mode="lines+markers", name="P50 Median Neural Forecast", line=dict(color="#38bdf8", width=3), marker=dict(size=6, color="#0284c7"), hovertemplate="<b>Time: %{x}</b><br>Predicted PM2.5: %{y:.1f} µg/m³<extra></extra>"))
         fig.update_layout(xaxis_title="Timeline (Next 24 Hours)", yaxis_title="PM2.5 Concentration (µg/m³)", height=400, margin=dict(t=20, b=20, l=10, r=10), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), plot_bgcolor="rgba(15, 23, 42, 0.4)", paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig, use_container_width=True)
 
+    # =====================================================================
+    # 🔍 EXPLAINABLE AI (XAI) & ATMO SENSITIVITY WATERFALL
+    # =====================================================================
+    if xai_attributions:
+        st.divider()
+        st.subheader("🔍 Explainable AI (XAI): Atmospheric Feature Attribution")
+        st.caption("Gradient-based sensitivity analysis proving which physical atmospheric parameters drove the neural network's predictions.")
+        render_xai_feature_attribution(xai_attributions)
+
+    # =====================================================================
+    # 🎛️ COUNTERFACTUAL "WHAT-IF" ATMOSPHERIC SCENARIO SIMULATOR
+    # =====================================================================
+    if raw_records and artifacts_obj:
+        st.divider()
+        st.subheader("🎛️ Counterfactual Scenario Simulator (Prescriptive Deep Learning)")
+        st.caption("Interact with environmental sliders to run live counterfactual forward passes through the PyTorch neural network.")
+
+        with st.expander("✨ Open Interactive Atmospheric & Policy Sandbox", expanded=True):
+            s_col1, s_col2, s_col3, s_col4 = st.columns(4)
+            with s_col1:
+                wind_delta = st.slider("💨 Wind Speed Delta", min_value=-5.0, max_value=20.0, value=0.0, step=1.0, help="Simulate strong flushing winds vs stagnant calm air")
+            with s_col2:
+                temp_delta = st.slider("🌡️ Temperature Delta", min_value=-8.0, max_value=8.0, value=0.0, step=1.0, help="Simulate cold-air thermal inversion vs warm boundary layer")
+            with s_col3:
+                rain_sim = st.slider("🌧️ Rainfall Scrubbing", min_value=0.0, max_value=25.0, value=0.0, step=2.0, help="Simulate precipitation wet scavenging")
+            with s_col4:
+                emission_curb = st.slider("🏭 Emission / Traffic Curb", min_value=0, max_value=50, value=0, step=5, help="Simulate municipal odd-even or industrial curb policy")
+
+            # Run counterfactual forward pass
+            sim_pm_vals = predict_what_if_scenario(
+                raw_records, artifacts_obj,
+                wind_delta=wind_delta, temp_delta=temp_delta,
+                rain_val=rain_sim, emission_reduction_pct=emission_curb
+            )
+
+            # Plot baseline vs simulated trajectory
+            sim_fig = go.Figure()
+            times = [r["time"] for r in forecast_rows] if forecast_rows else [f"+{i}h" for i in range(1, 25)]
+            baseline_vals = [r["pm25"] for r in forecast_rows] if forecast_rows else sim_pm_vals
+
+            sim_fig.add_trace(go.Scatter(
+                x=times, y=baseline_vals,
+                mode="lines", name="Baseline Forecast",
+                line=dict(color="#94a3b8", width=2, dash="dash"),
+                hovertemplate="Baseline: %{y:.1f} µg/m³<extra></extra>"
+            ))
+            sim_fig.add_trace(go.Scatter(
+                x=times, y=sim_pm_vals,
+                mode="lines+markers", name="Simulated Counterfactual Trajectory",
+                line=dict(color="#10b981" if sum(sim_pm_vals) < sum(baseline_vals) else "#f59e0b", width=3),
+                marker=dict(size=5),
+                hovertemplate="Simulated: %{y:.1f} µg/m³<extra></extra>"
+            ))
+
+            sim_fig.update_layout(
+                xaxis_title="Timeline (Next 24 Hours)",
+                yaxis_title="PM2.5 Concentration (µg/m³)",
+                height=320, margin=dict(t=10, b=10, l=10, r=10),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                plot_bgcolor="rgba(15, 23, 42, 0.4)",
+                paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(sim_fig, use_container_width=True)
+
+            avg_base = sum(baseline_vals) / len(baseline_vals)
+            avg_sim = sum(sim_pm_vals) / len(sim_pm_vals)
+            diff = avg_sim - avg_base
+            pct_diff = (diff / avg_base) * 100.0 if avg_base > 0 else 0.0
+
+            if diff < 0:
+                st.success(f"🌿 **Positive Impact:** Simulated scenario reduces 24-hour average exposure by **{abs(diff):.1f} µg/m³ ({abs(pct_diff):.1f}%)**.")
+            elif diff > 0:
+                st.warning(f"⚠️ **Adverse Impact:** Stagnant conditions increase 24-hour average exposure by **+{diff:.1f} µg/m³ (+{pct_diff:.1f}%)**.")
+            else:
+                st.info("Baseline meteorological conditions (no modifications applied).")
+
+    st.divider()
     if current_pm is not None:
         st.subheader("Targeted Public Health & Activity Advisories")
         render_health_advisories(current["category"])
@@ -259,7 +364,7 @@ if active_tab == "🌍 Live Forecast & Explorer":
     with col_right:
         if forecast_rows:
             st.subheader("Hourly Forecast Breakdown")
-            table_html = "<div style='max-height: 290px; overflow-y: auto;'><table style='width:100%;font-size:13.5px;'><tr><th>Time</th><th>PM2.5</th><th>Expected Range</th><th>AQI</th><th>Category</th></tr>"
+            table_html = "<div style='max-height: 290px; overflow-y: auto;'><table style='width:100%;font-size:13.5px;'><tr><th>Time</th><th>PM2.5</th><th>P10 - P90 Range</th><th>AQI</th><th>Category</th></tr>"
             for r in forecast_rows:
                 table_html += (f"<tr><td>{r['time']}</td><td style='text-align:right'><b>{r['pm25']}</b></td>"
                                f"<td style='text-align:right; opacity:0.75;'>[{r['pm25_lower']} - {r['pm25_upper']}]</td>"
@@ -326,7 +431,7 @@ elif active_tab == "📊 City Analytics & Compare":
             cur_raw = get_current(c_name)
             pm_val = live_q["pm25"] if (live_q and "pm25" in live_q) else (cur_raw["pm25"] if cur_raw else 30.0)
             aqi_val, cat_val, _ = pm25_to_aqi_labeled(pm_val, standard=aqi_std_tab2)
-            fc = get_forecast_custom(c_name, aqi_std_tab2)
+            fc, _, _, _ = get_probabilistic_forecast(c_name, aqi_std_tab2)
             city_forecasts[c_name] = fc
             peak_val = max(r["pm25"] for r in fc) if fc else "—"
 
@@ -479,7 +584,7 @@ st.divider()
 # ---------- footer ----------
 st.markdown(
     "<div style='text-align:center; opacity:0.6; font-size:13px;'>"
-    "AirSense AI — Environmental Intelligence & Multi-City Air Quality Forecasting Platform<br>"
-    "Powered by Real-Time Atmospheric Monitoring & Predictive Analytics across 30 Indian Cities.</div>",
+    "AirSense AI — Deep Learning Environmental Intelligence & Multi-City AQI Forecasting Platform<br>"
+    "Powered by PyTorch Multi-Step LSTM, Monte Carlo Dropout & Explainable AI across 30 Indian Cities.</div>",
     unsafe_allow_html=True,
 )

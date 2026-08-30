@@ -509,3 +509,56 @@ def render_pollutants_breakdown(pm25: float, standard: str = "CPCB", live_pollut
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+
+import plotly.graph_objects as go
+
+def render_xai_feature_attribution(attributions: dict):
+    """Render Explainable AI (XAI) feature contribution breakdown."""
+    if not attributions:
+        return
+    
+    names = list(attributions.keys())
+    values = list(attributions.values())
+
+    fig = go.Figure(go.Bar(
+        x=values,
+        y=names,
+        orientation='h',
+        marker=dict(
+            color=values,
+            colorscale='Tealgrn',
+            showscale=False,
+        ),
+        hovertemplate="<b>%{y}</b><br>Model Sensitivity Contribution: <b>%{x:.1f}%</b><extra></extra>"
+    ))
+
+    fig.update_layout(
+        xaxis_title="Relative Deep Learning Model Attribution (%)",
+        height=240,
+        margin=dict(t=10, b=10, l=10, r=10),
+        plot_bgcolor="rgba(15, 23, 42, 0.4)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(range=[0, max(values) + 15]),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_anomaly_badge(anomaly_info: dict):
+    """Render unsupervised anomaly detection index bar."""
+    if not anomaly_info:
+        return
+    score = anomaly_info.get("anomaly_score", 0.0)
+    status = anomaly_info.get("status", "Nominal")
+    z = anomaly_info.get("z_score", 0.0)
+    color = anomaly_info.get("color", "#10b981")
+
+    st.markdown(
+        f'<div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255,255,255,0.1); border-left: 4px solid {color}; border-radius: 10px; padding: 12px 18px; margin-bottom: 16px;">'
+        f'<div style="display:flex; justify-content:space-between; align-items:center;">'
+        f'<div><span style="font-weight:700; font-size:14px; color:{color};">{status}</span> &nbsp;|&nbsp; <span style="font-size:12.5px; opacity:0.8;">Atmospheric Deviation Z-Score: <b>{z}σ</b></span></div>'
+        f'<div><span style="font-size:12px; font-weight:700; background:{color}22; color:{color}; padding:3px 10px; border-radius:12px; border:1px solid {color}44;">Anomaly Confidence: {score:.0f}%</span></div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
